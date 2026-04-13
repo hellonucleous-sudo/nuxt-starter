@@ -1,104 +1,102 @@
 {
   "hero": {
-    "title": "Build Blazing-Fast Websites with Nuxt.js & Netlify",
-    "description": "Craft high-performing, SEO-friendly web experiences with the dynamic power of Nuxt.js and the speed of Netlify's global edge network.",
+    "title": "Nucleous — AI-Driven CRM & Workforce Intelligence Platform",
+    "description": "Nucleous is an AI-powered CRM designed to manage leads, funnels, teams, and follow-ups in one unified system. From cold leads to closed deals, Nucleous helps businesses track, automate, and scale their entire lead development workflow with precision and speed.",
     "image": "images/hero.jpg",
-    "imageAlt": "Nuxt logo and title on abstract background",
+    "imageAlt": "Nucleous AI CRM dashboard showcasing lead funnels and analytics",
     "buttons": [
       {
-        "label": "Get Started Today",
-        "url": "https://www.netlify.com/"
+        "label": "Book a Free Trial",
+        "url": "/signup"
+      },
+      {
+        "label": "Login",
+        "url": "/login"
       }
     ]
   },
   "logos": {
-    "title": "Trusted by the world's best",
+    "title": "Built for High-Performance Teams",
     "icons": [
-      {
-        "name": "i-simple-icons-gitlab"
-      },
-      {
-        "name": "i-simple-icons-github"
-      },
-      {
-        "name": "i-simple-icons-openai"
-      },
-      {
-        "name": "i-simple-icons-google"
-      },
-      {
-        "name": "i-simple-icons-netlify"
-      }
+      { "name": "i-simple-icons-google" },
+      { "name": "i-simple-icons-whatsapp" },
+      { "name": "i-simple-icons-openai" },
+      { "name": "i-simple-icons-slack" },
+      { "name": "i-simple-icons-netlify" }
     ]
   },
   "features": {
-    "title": "Why choose Nuxt.js?",
-    "description": "Nuxt.js is a powerful framework built on top of Vue.js that provides an excellent developer experience.",
+    "title": "Why Businesses Choose Nucleous",
+    "description": "Nucleous combines AI automation, funnel-based CRM, and workforce intelligence to give teams complete operational control and visibility.",
     "items": [
       {
-        "title": "Server-Side Rendering",
-        "description": "Nuxt.js allows you to build SSR applications with Vue.js, ensuring fast initial page loads and better SEO."
+        "title": "Funnel-Based Lead Management",
+        "description": "Organize every lead into structured pipelines and funnels. Track progress across stages, teams, and ownership from first contact to deal closure."
       },
       {
-        "title": "Static Site Generation",
-        "description": "You can pre-render pages at build time for static websites. This helps with performance and scalability by serving content directly from a CDN."
+        "title": "AI-Driven Follow-Ups",
+        "description": "Automate intelligent follow-ups via email and WhatsApp. Nucleous AI adapts messaging and timing based on lead behavior and engagement history."
       },
       {
-        "title": "Auto-Routing",
-        "description": "Nuxt automatically generates routes based on the file structure inside the pages directory, reducing the need for manual configuration."
+        "title": "Smart Quotation Builder",
+        "description": "Create professional quotations in minutes using configurable products and services. Reduce errors, speed up negotiations, and close deals faster."
       },
       {
-        "title": "File-based Configuration",
-        "description": "Nuxt uses a convention-over-configuration approach, allowing you to define configurations easily in nuxt.config.js without much boilerplate."
+        "title": "Workforce Productivity Tracking",
+        "description": "Monitor shifts, breaks, activity levels, and average handling time. Improve productivity with real-time insights instead of manual supervision."
       },
       {
-        "title": "Dynamic Imports",
-        "description": "It supports lazy loading of components with dynamic imports to improve performance by splitting the code into smaller chunks."
+        "title": "Enterprise Admin Control",
+        "description": "Manage large teams from a single dashboard. Assign leads, control feature access, manage funnels, and enforce role-based permissions."
       },
       {
-        "title": "SEO Friendly",
-        "description": "With SSR, SSG, and automatic meta tag handling, Nuxt.js ensures your application is SEO-friendly."
+        "title": "AI-Powered Analytics & Reporting",
+        "description": "Gain actionable insights into conversion rates, lead aging, team performance, and funnel efficiency with AI-driven analytics."
       }
     ]
   },
   "testimonials": {
-    "title": "What Our Users Are Saying",
-    "description": "Hear from our clients about their experiences working with Nuxt and Netlify.",
+    "title": "Trusted by Modern Lead Teams",
+    "description": "Teams across industries rely on Nucleous to streamline operations and increase conversions.",
     "items": [
       {
-        "quote": "Nuxt has made building our projects so much easier and more enjoyable! Its simple setup and powerful features help us create fast, responsive websites with minimal effort.",
+        "quote": "Nucleous completely transformed how we manage leads and teams. The AI follow-ups alone helped us close deals faster without increasing headcount.",
         "author": {
-          "name": "Daniel H.",
-          "title": "Marketing Specialist at Some Company",
+          "name": "Amit R.",
+          "title": "Sales Head, Enterprise Services",
           "avatar": "images/person-1.jpg"
         }
       },
       {
-        "quote": "The scalability offered by Netlify and the flexibility of Nuxt have allowed us to expand our site's functionality without worrying about performance issues. This combination is a powerful solution for any growing business.",
+        "quote": "Managing multiple teams and funnels became effortless with Nucleous. Everything from analytics to quotations is now in one place.",
         "author": {
-          "name": "Sarah L.",
-          "title": "CEO at Some Company",
+          "name": "Neha S.",
+          "title": "Operations Manager, Marketing Agency",
           "avatar": "images/person-2.jpg"
         }
       },
       {
-        "quote": "Switching to Nuxt and Netlify was a game-changer for our development process. The seamless integration between the two platforms allowed us to deploy faster and with fewer headaches.",
+        "quote": "The combination of CRM and workforce tracking is what sets Nucleous apart. It gives full visibility without micromanagement.",
         "author": {
-          "name": "Mark T.",
-          "title": "Frontend Engineer at Some Company",
+          "name": "Rahul K.",
+          "title": "Founder, B2B SaaS Company",
           "avatar": "images/person-3.jpg"
         }
       }
     ]
   },
   "cta": {
-    "title": "Start Building with Nuxt & Netlify",
-    "description": "Let your next project be smarter, faster, and effortlessly deployable.",
+    "title": "Run Your Leads and Teams on One Platform",
+    "description": "Start managing leads, funnels, teams, and follow-ups smarter with Nucleous. No complexity, just complete control.",
     "buttons": [
       {
-        "label": "Get Started Today",
-        "url": "https://www.netlify.com/"
+        "label": "Start Free Trial",
+        "url": "/signup"
+      },
+      {
+        "label": "Request a Demo",
+        "url": "/demo"
       }
     ]
   }
-} 
+}

@@ -420,9 +420,6 @@
         <div class="foot-brand-col">
           <div class="brand"><span class="brand-name">nucle<span class="brand-blue">us</span></span></div>
           <p class="foot-desc">AI-driven lead operations and workforce intelligence platform for modern revenue teams.</p>
-          <div class="foot-socials">
-            <a class="soc-lnk">Li</a><a class="soc-lnk">Tw</a><a class="soc-lnk">Gh</a>
-          </div>
         </div>
         <div class="foot-links-grid">
           <div class="fl-col" v-for="col in footLinks" :key="col.head">
@@ -664,7 +661,6 @@
             <div class="zfb-avatar-wrap">
               <div class="zfb-av">Z</div>
               <span class="zfb-pulse"></span>
-              <div class="zfb-ai-tag">AI</div>
             </div>
             <div class="zfb-text">
               <div class="zfb-label">Ask ZIRA</div>

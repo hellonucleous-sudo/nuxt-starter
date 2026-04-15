@@ -683,8 +683,8 @@ import { ref, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 // ⚠️ REPLACE THIS URL with your deployed Apps Script URL after deployment
 const SHEET_URL            = 'https://script.google.com/macros/s/AKfycbyfqpoWZ2L2xNw99Z6-90_tFXXpa6IB1oS6gI79ZmgWpMTX7kdzm7rU3oxbOAVW3KU/exec'
-const DEFAULT_EMPLOYER_URL = 'https://script.google.com/macros/s/AKfycbynpgWjg4G5-oXJpBcmf0maWHwwH8Z9X92tWvRodRH_-O2TzGZvMLKMZ_nhZyxrFJmxgg/exec'
-const DEFAULT_ADMIN_URL    = 'https://script.google.com/macros/s/AKfycbynpgWjg4G5-oXJpBcmf0maWHwwH8Z9X92tWvRodRH_-O2TzGZvMLKMZ_nhZyxrFJmxgg/exec?admin=true'
+const DEFAULT_EMPLOYER_URL = 'https://script.google.com/macros/s/AKfycbxGm9vEzeXpstMMm9Rx50Y1FVaV5Bku0a4RUt5B2hhC0pI_i3fGatMo-UQot9CDligUrw/exec'
+const DEFAULT_ADMIN_URL    = 'https://script.google.com/macros/s/AKfycbxGm9vEzeXpstMMm9Rx50Y1FVaV5Bku0a4RUt5B2hhC0pI_i3fGatMo-UQot9CDligUrw/exec?admin=true'
 const SESSION_KEY          = 'nuc_sid'
 const LOGIN_KEY            = 'nuc_user'
 const LOGIN_TTL_MS         = 7 * 24 * 60 * 60 * 1000

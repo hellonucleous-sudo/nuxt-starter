@@ -31,8 +31,8 @@ const SN = {
   ROUTING:      'ROUTING_RULES',
   COMPANY:      'COMPANY_PROFILE',
   SERVICES:     'SERVICES_CATALOG',
-  PROFILES:     'COMPANY_PROFILES',
-  // Legacy aliases — keep all existing _getSheet(SN.LOGS/SHIFTS/PERFORMANCE) calls working
+PROFILES:     'COMPANY_PROFILES',
+  TASKS:        'TASKS',
   LOGS:         'ACTIVITY_LOG',
   SHIFTS:       'ACTIVITY_LOG',
   PERFORMANCE:  'ACTIVITY_LOG'
@@ -264,6 +264,8 @@ case 'toggleRoutingRule':          result = toggleRoutingRuleServer(args[0], arg
       case 'markEmployeeActive':      result = markEmployeeActive(args[0]);                break;
       case 'updateUserActivity':      result = updateUserActivity(args[0]);                break;
       case 'getUserActivity':         result = getUserActivity();                          break;
+      case 'getShiftStatus':          result = getShiftStatus(args[0]);                    break;
+      case 'getAdminShiftDashboard':  result = getAdminShiftDashboard();                  break;
       case 'getCompanyProfile':       result = getCompanyProfile();                        break;
       case 'saveCompanyProfile':      result = saveCompanyProfile(args[0]);                break;
       case 'syncCompanyProfileToSheet': result = saveCompanyProfile(args[0]);              break;
@@ -282,7 +284,12 @@ case 'viewQuotation':
       case 'getCompanyProfilesList':  result = getCompanyProfilesList();                   break;
       case 'saveProfileEntry':        result = saveProfileEntry(args[0]);                  break;
       case 'deleteProfileEntry':      result = deleteProfileEntry(args[0]);                break;
-      case 'openSheetTab':            result = openSheetTab(args[0]);                      break;
+case 'openSheetTab':            result = openSheetTab(args[0]);                      break;
+      case 'createTask':              result = createTask(args[0]);                        break;
+      case 'getTasks':                result = getTasks(args[0]);                          break;
+      case 'getTasksByEmployee':      result = getTasksByEmployee(args[0]);                break;
+      case 'updateTaskStatus':        result = updateTaskStatus(args[0], args[1]);         break;
+      case 'deleteTask':              result = deleteTask(args[0]);                        break;
       default:
         result = { error: 'Unknown function: ' + fn };
     }
@@ -473,6 +480,32 @@ function _getActivityLabel(action) {
     'WORKFLOW_CREATED':'Workflow Sent','LEAD_ARCHIVED':'Archived'
   };
   return m[action] || action.replace(/_/g,' ');
+}
+
+function saveShiftLocation(locationData) {
+  if (!locationData || !locationData.empId) return { success: false, error: 'Missing location data' };
+  
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('ShiftLocations');
+    if (!sheet) return { success: false, error: 'ShiftLocations sheet not found' };
+    
+    // Headers: Employee ID | Name | Email | Latitude | Longitude | Accuracy | Timestamp | Event
+    sheet.appendRow([
+      locationData.empId,
+      locationData.empName || '',
+      locationData.empEmail || '',
+      locationData.latitude || '',
+      locationData.longitude || '',
+      locationData.accuracy || '',
+      locationData.timestamp || new Date().toISOString(),
+      locationData.event || 'location_update'
+    ]);
+    
+    return { success: true };
+  } catch(e) {
+    console.error('Location save error:', e);
+    return { success: false, error: e.message };
+  }
 }
 
 // Find Activity Log column index in MASTER_LEADS (1-indexed)
@@ -4719,7 +4752,7 @@ function logShift(empEmail, empId, action, extraData) {
     const now     = new Date().toISOString();
     const extra   = extraData || {};
 
-    // ── 1. Write to ShiftEvents (read by admin panel's renderShiftsTable) ──
+    // ── 1. Write to ShiftEvents (append-only event log) ──────────
     let shiftEvSh = ss.getSheetByName('ShiftEvents');
     if (!shiftEvSh) {
       shiftEvSh = ss.insertSheet('ShiftEvents');
@@ -4741,14 +4774,15 @@ function logShift(empEmail, empId, action, extraData) {
       }
     }
 
-    // Map action string to event name
+    // Normalize action string to canonical event name
     const eventMap = {
       'start':       'shift_start',
       'end':         'shift_end',
       'break_start': 'break_start',
       'break_end':   'break_end',
       'shift_start': 'shift_start',
-      'shift_end':   'shift_end'
+      'shift_end':   'shift_end',
+      'resume':      'break_end'
     };
     const event = eventMap[action] || action;
 
@@ -4762,76 +4796,40 @@ function logShift(empEmail, empId, action, extraData) {
       now
     ]);
 
-    // ── 2. Also update SHIFT_TRACKER (keeps existing startShift/endShift working) ──
-    const sh = _getSheet(SN.SHIFTS);
-    if (sh) {
-      if (action === 'start' || action === 'shift_start') {
-        sh.appendRow([
-          _uid('SHF'),
-          empEmail,
-          empName,
-          Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd'),
-          Utilities.formatDate(new Date(), CONFIG.TZ, 'HH:mm:ss'),
-          '', 'Active', '', '', '', '', '', 0, 0, 0, ''
-        ]);
-      } else if (action === 'end' || action === 'shift_end') {
-        const shData = sh.getDataRange().getValues();
-        for (let i = shData.length - 1; i >= 1; i--) {
-          if (String(shData[i][1]||'').toLowerCase() === empEmail.toLowerCase() &&
-              (shData[i][6] === 'Active' || shData[i][6] === 'On Break')) {
-            sh.getRange(i+1, 6).setValue(Utilities.formatDate(new Date(), CONFIG.TZ, 'HH:mm:ss'));
-            sh.getRange(i+1, 7).setValue('Ended');
-            break;
-          }
-        }
-      } else if (action === 'break_start') {
-        const shData = sh.getDataRange().getValues();
-        for (let i = shData.length - 1; i >= 1; i--) {
-          if (String(shData[i][1]||'').toLowerCase() === empEmail.toLowerCase() && shData[i][6] === 'Active') {
-            sh.getRange(i+1, 7).setValue('On Break');
-            sh.getRange(i+1, 8).setValue(Utilities.formatDate(new Date(), CONFIG.TZ, 'HH:mm:ss'));
-            break;
-          }
-        }
-      } else if (action === 'break_end') {
-        const shData = sh.getDataRange().getValues();
-        for (let i = shData.length - 1; i >= 1; i--) {
-          if (String(shData[i][1]||'').toLowerCase() === empEmail.toLowerCase() && shData[i][6] === 'On Break') {
-            sh.getRange(i+1, 7).setValue('Active');
-            sh.getRange(i+1, 9).setValue(Utilities.formatDate(new Date(), CONFIG.TZ, 'HH:mm:ss'));
-            break;
-          }
-        }
-      }
-    }
+    // ── 2. Update EMPLOYEES sheet — ONE row per employee, status updated in-place ──
+    // statusMap uses the NORMALIZED event name (shift_start, shift_end, break_start, break_end)
+    const statusMap = {
+      'shift_start': 'Active',
+      'shift_end':   'Inactive',
+      'break_start': 'On Break',
+      'break_end':   'Active'
+    };
+    const newStatus = statusMap[event];
 
-    // ── 3. Update employee status in EMPLOYEES sheet ──
-    if (empSh && empEmail) {
+    if (empSh && empEmail && newStatus) {
       const eData = empSh.getDataRange().getValues();
       const eH    = eData[0];
       const eIdx  = eH.findIndex(h => /email/i.test(h));
       const sIdx  = eH.findIndex(h => /^status$/i.test(String(h).trim()));
       const laIdx = eH.findIndex(h => /last.?active/i.test(h));
-  const statusMap = {
-        'start':       'Active',
-        'shift_start': 'Active',
-        'end':         'Inactive',
-        'shift_end':   'Inactive',
-        'break_start': 'On Break',
-        'break_end':   'Active'
-      };
-      const newStatus = statusMap[action] || 'Active';
-      for (let ei = 1; ei < eData.length; ei++) {
-        if (String(eData[ei][eIdx]||'').toLowerCase().trim() === empEmail.toLowerCase().trim()) {
-          if (sIdx  >= 0) empSh.getRange(ei+1, sIdx+1).setValue(newStatus);
-          if (laIdx >= 0) empSh.getRange(ei+1, laIdx+1).setValue(now);
-          break;
+      if (eIdx >= 0 && sIdx >= 0) {
+        for (let ei = 1; ei < eData.length; ei++) {
+          if (String(eData[ei][eIdx]||'').toLowerCase().trim() === empEmail.toLowerCase().trim()) {
+            empSh.getRange(ei+1, sIdx+1).setValue(newStatus);
+            if (laIdx >= 0) empSh.getRange(ei+1, laIdx+1).setValue(now);
+            break;
+          }
         }
       }
     }
 
+    // ── 3. Update USER_ACTIVITY — one row per user, upserted ──
+    const actStatus = newStatus || 'Online';
+    _upsertUserActivity(ss, empEmail || '', empId || '', empName, actStatus, 'employer', now);
+
     SpreadsheetApp.flush();
-    return { success: true };
+    return { success: true, event: event, status: newStatus || 'unchanged' };
+
   } catch(e) {
     Logger.log('logShift error: ' + e.message);
     return { success: false, error: e.message };
@@ -6784,14 +6782,24 @@ function _applyRoutingRulesToRow(rowData, headers, sheet, sheetRowNumber) {
 // ═══════════════════════════════════════════════════════════════
 
 // ─── SHIFT EVENTS (called by employer panel) ─────────────────
+// ─── SHIFT EVENTS — logShiftEvent, getShiftEvents, markEmployeeActive
+//  These are called by the employer panel
+// ═══════════════════════════════════════════════════════════════
+
+// ─── SHIFT EVENTS (called by employer panel) ─────────────────
 function logShiftEvent(data) {
   if (!data) return { success: false, error: 'No data' };
+  // Accept both 'event' and 'action' field names from the front-end
+  const action = String(data.event || data.action || '');
   return logShift(
     String(data.empEmail || ''),
     String(data.empId    || ''),
-    String(data.event    || ''),
-    { totalBreakSeconds: data.totalBreakSeconds || 0,
-      totalSeconds:      data.totalSeconds      || 0 }
+    action,
+    {
+      totalBreakSeconds: data.totalBreakSeconds || 0,
+      breakMinutes:      data.breakMinutes      || 0,
+      totalSeconds:      data.totalSeconds      || 0
+    }
   );
 }
 
@@ -6840,12 +6848,23 @@ function markEmployeeActive(email) {
 }
 
 // ─── USER ACTIVITY — one row per user, upserted on each status change ───
+// ─── USER ACTIVITY — one row per user, upserted on each status change ───
 function updateUserActivity(data) {
   try {
     const ss     = SpreadsheetApp.getActiveSpreadsheet();
     const email  = String(data.email || '').toLowerCase().trim();
-    const status = data.forceStatus || 'Online';
     if (!email) return { success: false };
+    // Map shift event to a display status if provided
+    const shiftStatusMap = {
+      'shift_start': 'Active',
+      'shift_end':   'Inactive',
+      'break_start': 'On Break',
+      'break_end':   'Active',
+      'start':       'Active',
+      'end':         'Inactive'
+    };
+    const event  = String(data.event || data.action || '');
+    const status = data.forceStatus || shiftStatusMap[event] || 'Online';
     _upsertUserActivity(ss, email, data.empId || '', data.name || '', status, 'employer', new Date().toISOString());
     return { success: true };
   } catch(e) { return { success: false, error: e.message }; }
@@ -6867,6 +6886,499 @@ function getUserActivity() {
       lastSeen: String(r[h.indexOf('lastseen')] || '')
     }));
   } catch(e) { return []; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN REAL-TIME SHIFT DASHBOARD — single call returns all data
+//  Called by admin panel every 10 seconds
+// ═══════════════════════════════════════════════════════════════
+function getAdminShiftDashboard() {
+  try {
+    const ss      = SpreadsheetApp.getActiveSpreadsheet();
+    const today   = _today(); // yyyy-MM-dd
+    const now     = new Date();
+
+    // ── 1. Read EMPLOYEES sheet ──────────────────────────────
+    const empSh   = ss.getSheetByName('EMPLOYEES');
+    const empRows = empSh ? empSh.getDataRange().getValues() : [];
+    const empH    = empRows[0] || [];
+    const eIdx    = empH.findIndex(h => /email/i.test(String(h)));
+    const nIdx    = empH.findIndex(h => /^name$/i.test(String(h).trim()));
+    const rIdx    = empH.findIndex(h => /^role$/i.test(String(h).trim()));
+    const sIdx    = empH.findIndex(h => /^status$/i.test(String(h).trim()));
+    const laIdx   = empH.findIndex(h => /last.?active/i.test(String(h)));
+    const empMap  = {};
+    for (let i = 1; i < empRows.length; i++) {
+      const r = empRows[i];
+      if (!r[0] && !r[1]) continue;
+      const email = String(r[eIdx >= 0 ? eIdx : 2] || '').toLowerCase().trim();
+      if (!email) continue;
+      empMap[email] = {
+        empId:    String(r[0] || ''),
+        name:     String(r[nIdx >= 0 ? nIdx : 1] || ''),
+        role:     String(r[rIdx >= 0 ? rIdx : 4] || 'BDE'),
+        status:   String(r[sIdx >= 0 ? sIdx : 10] || 'Inactive'),
+        lastActive: r[laIdx >= 0 ? laIdx : -1] ? String(r[laIdx] || '') : ''
+      };
+    }
+
+    // ── 2. Read ShiftEvents for today ───────────────────────
+    const seS    = ss.getSheetByName('ShiftEvents');
+    const seRows = seS ? seS.getDataRange().getValues() : [];
+    const seH    = (seRows[0] || []).map(x => String(x).toLowerCase().trim());
+    const se_id  = seH.indexOf('empid');
+    const se_em  = seH.indexOf('empemail');
+    const se_ev  = seH.indexOf('event');
+    const se_tm  = seH.indexOf('time');
+    const se_bks = seH.indexOf('totalbreakseconds');
+
+    const shiftMap = {}; // email → { event, loginTime, logoutTime, totalBreakSec, breakStart }
+    for (let i = 1; i < seRows.length; i++) {
+      const r   = seRows[i];
+      const raw = se_tm >= 0 ? r[se_tm] : r[6];
+      if (!raw) continue;
+      const t = new Date(raw);
+      if (isNaN(t.getTime())) continue;
+      if (Utilities.formatDate(t, CONFIG.TZ, 'yyyy-MM-dd') !== today) continue;
+      const email = String(se_em >= 0 ? r[se_em] : r[2] || '').toLowerCase().trim();
+      if (!email) continue;
+      const ev  = String(se_ev >= 0 ? r[se_ev] : r[3] || '').toLowerCase().trim();
+      const bks = Number(se_bks >= 0 ? r[se_bks] : r[5] || 0);
+      if (!shiftMap[email]) shiftMap[email] = { event: null, loginTime: null, logoutTime: null, totalBreakSec: 0, breakStart: null };
+      const s = shiftMap[email];
+      if (ev === 'shift_start')  { s.event = 'Active'; s.loginTime = raw; s.logoutTime = null; }
+      else if (ev === 'break_start' && s.event === 'Active') { s.event = 'On Break'; s.breakStart = raw; }
+      else if (ev === 'break_end') {
+        if (s.breakStart) s.totalBreakSec += Math.max(0, Math.round((t - new Date(s.breakStart)) / 1000));
+        if (bks) s.totalBreakSec = bks;
+        s.breakStart = null;
+        s.event = 'Active';
+      } else if (ev === 'shift_end') { s.event = 'Shift Ended'; s.logoutTime = raw; }
+    }
+
+    // ── 3. Read today's ACTIVITY_LOG for performance ────────
+    const actSh   = ss.getSheetByName('ACTIVITY_LOG');
+    const actRows = actSh ? actSh.getDataRange().getValues() : [];
+    const actH    = (actRows[0] || []).map(x => String(x).toLowerCase().trim());
+    const a_date  = actH.indexOf('date');
+    const a_email = actH.indexOf('email');
+    const a_act   = actH.indexOf('action') >= 0 ? actH.indexOf('action') : actH.indexOf('type');
+
+    // perfMap[email] = { calls, meetings, quotations, hotLeads, notes, leads }
+    const perfMap = {};
+    for (let i = 1; i < actRows.length; i++) {
+      const r = actRows[i];
+      const dateVal = String(a_date >= 0 ? r[a_date] : r[2] || '').slice(0, 10);
+      if (dateVal !== today) continue;
+      const email = String(a_email >= 0 ? r[a_email] : r[3] || '').toLowerCase().trim();
+      if (!email) continue;
+      const act = String(a_act >= 0 ? r[a_act] : r[6] || '');
+      if (!perfMap[email]) perfMap[email] = { calls: 0, meetings: 0, quotations: 0, hotLeads: 0, notes: 0, leads: 0 };
+      const p = perfMap[email];
+      if (act === 'CALL_MADE' || act === 'CALL_COMPLETED') p.calls++;
+      if (act === 'MEETING_SCHEDULED' || act === 'MEETING_COMPLETED') p.meetings++;
+      if (act === 'QUOTATION_CREATED' || act === 'QUOTATION_SENT') p.quotations++;
+      if (act === 'HOT_LEAD_TAGGED') p.hotLeads++;
+      if (act === 'NOTE_ADDED') p.notes++;
+      if (act === 'LEAD_ADDED') p.leads++;
+    }
+
+    // ── 4. Assemble result ───────────────────────────────────
+    const result = [];
+    const fmt = t => t ? new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
+
+    Object.keys(empMap).forEach(email => {
+      const emp    = empMap[email];
+      const shift  = shiftMap[email] || null;
+      const perf   = perfMap[email] || { calls: 0, meetings: 0, quotations: 0, hotLeads: 0, notes: 0, leads: 0 };
+
+      let shiftStatus = 'Inactive';
+      if (shift) {
+        shiftStatus = shift.event || 'Inactive';
+      } else {
+        // fallback: use EMPLOYEES sheet status if no shift event today
+        const empStatus = emp.status || '';
+        if (empStatus === 'Active' || empStatus === 'On Break' || empStatus === 'Shift Ended') shiftStatus = empStatus;
+      }
+
+      const activeMins = (shift && shift.loginTime)
+        ? Math.max(0, Math.round((
+            (shift.logoutTime ? new Date(shift.logoutTime) : now) - new Date(shift.loginTime)
+          ) / 60000) - Math.round((shift.totalBreakSec || 0) / 60))
+        : 0;
+
+      const score = perf.calls * 10 + perf.meetings * 25 + perf.quotations * 50 + perf.hotLeads * 15;
+
+      result.push({
+        empId:       emp.empId,
+        name:        emp.name,
+        role:        emp.role,
+        email:       email,
+        shiftStatus: shiftStatus,   // 'Active' | 'On Break' | 'Shift Ended' | 'Inactive'
+        loginTime:   fmt(shift && shift.loginTime),
+        logoutTime:  fmt(shift && shift.logoutTime),
+        breakMins:   shift ? Math.round((shift.totalBreakSec || 0) / 60) : 0,
+        activeMins:  activeMins,
+        lastActive:  emp.lastActive,
+        calls:       perf.calls,
+        meetings:    perf.meetings,
+        quotations:  perf.quotations,
+        hotLeads:    perf.hotLeads,
+        notes:       perf.notes,
+        leads:       perf.leads,
+        score:       score
+      });
+    });
+
+    return result;
+  } catch(e) {
+    Logger.log('getAdminShiftDashboard error: ' + e.message);
+    return [];
+  }
+}
+
+// ─── getShiftStatus — returns current status of one or all employees ──
+function getShiftStatus(email) {
+  try {
+    const ss        = SpreadsheetApp.getActiveSpreadsheet();
+    const shiftEvSh = ss.getSheetByName('ShiftEvents');
+    const empSh     = _getSheet(SN.EMPLOYEES);
+    const todayStr  = new Date().toDateString();
+
+    // Build shiftMap from today's ShiftEvents
+    const shiftMap = {};
+    if (shiftEvSh && shiftEvSh.getLastRow() >= 2) {
+      const evData = shiftEvSh.getDataRange().getValues();
+      const hasHeader = String(evData[0][0]||'').toLowerCase().includes('emp');
+      const rows = hasHeader ? evData.slice(1) : evData;
+      rows.forEach(function(r) {
+        const em = String(r[2]||'').toLowerCase().trim();
+        if (!em) return;
+        const evType = String(r[3]||'').toLowerCase().trim();
+        const evTime = r[6];
+        if (!evTime) return;
+        const d = new Date(evTime);
+        if (d.toDateString() !== todayStr) return;
+        if (!shiftMap[em]) shiftMap[em] = { status: 'Inactive', loginTime: null, logoutTime: null };
+        if (evType === 'shift_start') { shiftMap[em].status = 'Active'; shiftMap[em].loginTime = evTime; }
+        else if (evType === 'break_start') { shiftMap[em].status = 'On Break'; }
+        else if (evType === 'break_end')   { shiftMap[em].status = 'Active'; }
+        else if (evType === 'shift_end')   { shiftMap[em].status = 'Inactive'; shiftMap[em].logoutTime = evTime; }
+      });
+    }
+
+    // Get employee list
+    const allEmps = [];
+    if (empSh && empSh.getLastRow() >= 2) {
+      const empData = empSh.getDataRange().getValues();
+      empData.slice(1).forEach(function(r) {
+        const em = String(r[2]||'').toLowerCase().trim();
+        if (!em) return;
+        const shiftInfo = shiftMap[em] || {};
+        allEmps.push({
+          empId:     String(r[0]||''),
+          name:      String(r[1]||''),
+          email:     em,
+          role:      String(r[4]||''),
+          shiftStatus: shiftInfo.status || 'Inactive',
+          loginTime:   shiftInfo.loginTime || '',
+          logoutTime:  shiftInfo.logoutTime || ''
+        });
+      });
+    }
+
+    if (email) {
+      const norm = email.toLowerCase().trim();
+      return allEmps.find(function(e) { return e.email === norm; }) || null;
+    }
+    return allEmps;
+  } catch(e) {
+    Logger.log('getShiftStatus error: ' + e.message);
+    return [];
+  }
+}
+
+function _ensureTasksSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SN.TASKS);
+  if (!sh) {
+    sh = ss.insertSheet(SN.TASKS);
+    const headers = ['TaskID','Title','Description','AssignedTo','AssignedToEmail','AssignedDate','DueDate','Status','Priority','LastUpdated'];
+    sh.appendRow(headers);
+    sh.getRange(1,1,1,headers.length)
+      .setBackground('#111827')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 160);
+    sh.setColumnWidth(2, 220);
+    sh.setColumnWidth(3, 280);
+    sh.setColumnWidth(4, 160);
+    sh.setColumnWidth(5, 200);
+    sh.setColumnWidth(6, 130);
+    sh.setColumnWidth(7, 130);
+    sh.setColumnWidth(8, 110);
+    sh.setColumnWidth(9, 100);
+    sh.setColumnWidth(10, 180);
+  }
+  return sh;
+}
+
+function _generateTaskId() {
+  return 'TSK-' + new Date().getFullYear() + '-' + String(Date.now()).slice(-6);
+}
+
+function createTask(payload) {
+  try {
+    if (!payload || !payload.title) return { success: false, error: 'Title is required' };
+    const sh = _ensureTasksSheet();
+    const data = sh.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const idIdx = headers.indexOf('TaskID');
+    const existingIds = data.slice(1).map(r => String(r[idIdx] || ''));
+    let taskId = _generateTaskId();
+    let attempt = 0;
+    while (existingIds.includes(taskId) && attempt < 10) {
+      Utilities.sleep(5);
+      taskId = _generateTaskId();
+      attempt++;
+    }
+    const now = new Date().toISOString();
+    sh.appendRow([
+      taskId,
+      payload.title || '',
+      payload.description || '',
+      payload.assignedToName || '',
+      (payload.assignedToEmail || '').toLowerCase().trim(),
+      payload.assignedDate || now.slice(0, 10),
+      payload.dueDate || '',
+      payload.status || 'Active',
+      payload.priority || 'Medium',
+      now
+    ]);
+    SpreadsheetApp.flush();
+    return { success: true, taskId: taskId };
+  } catch(e) {
+    Logger.log('createTask error: ' + e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+function getTasks(filterEmail) {
+  try {
+    const sh = _ensureTasksSheet();
+    const data = sh.getDataRange().getValues();
+    if (data.length < 2) return [];
+    const headers = data[0].map(h => String(h).trim());
+    const norm = filterEmail ? filterEmail.toLowerCase().trim() : null;
+    const tasks = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = data[i][idx]; });
+      const rowEmail = String(row['AssignedToEmail'] || '').toLowerCase().trim();
+      if (norm && rowEmail !== norm) continue;
+      tasks.push({
+        taskId:            String(row['TaskID'] || ''),
+        title:             String(row['Title'] || ''),
+        description:       String(row['Description'] || ''),
+        assignedToName:    String(row['AssignedTo'] || ''),
+        assignedToEmail:   rowEmail,
+        assignedDate:      String(row['AssignedDate'] || ''),
+        dueDate:           String(row['DueDate'] || ''),
+        status:            String(row['Status'] || 'Active'),
+        priority:          String(row['Priority'] || 'Medium'),
+        lastUpdated:       String(row['LastUpdated'] || '')
+      });
+    }
+    return tasks;
+  } catch(e) {
+    Logger.log('getTasks error: ' + e.message);
+    return [];
+  }
+}
+
+function getTasksByEmployee(email) {
+  return getTasks(email);
+}
+
+function updateTaskStatus(taskId, status) {
+  try {
+    if (!taskId || !status) return { success: false, error: 'Missing taskId or status' };
+    const validStatuses = ['Active', 'On Hold', 'Completed'];
+    if (!validStatuses.includes(status)) return { success: false, error: 'Invalid status' };
+    const sh = _ensureTasksSheet();
+    const data = sh.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const idIdx       = headers.indexOf('TaskID');
+    const statusIdx   = headers.indexOf('Status');
+    const updatedIdx  = headers.indexOf('LastUpdated');
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]) === String(taskId)) {
+        sh.getRange(i + 1, statusIdx + 1).setValue(status);
+        sh.getRange(i + 1, updatedIdx + 1).setValue(new Date().toISOString());
+        SpreadsheetApp.flush();
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Task not found' };
+  } catch(e) {
+    Logger.log('updateTaskStatus error: ' + e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+function deleteTask(taskId) {
+  try {
+    if (!taskId) return { success: false, error: 'Missing taskId' };
+    const sh = _ensureTasksSheet();
+    const data = sh.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const idIdx = headers.indexOf('TaskID');
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]) === String(taskId)) {
+        sh.deleteRow(i + 1);
+        SpreadsheetApp.flush();
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Task not found' };
+  } catch(e) {
+    Logger.log('deleteTask error: ' + e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+function _ensureTasksSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('TASKS');
+  if (!sh) {
+    sh = ss.insertSheet('TASKS');
+    var headers = ['TaskID','Title','Description','AssignedTo','AssignedToEmail','AssignedDate','DueDate','Status','Priority','LastUpdated'];
+    sh.appendRow(headers);
+    sh.getRange(1,1,1,headers.length).setBackground('#111827').setFontColor('#ffffff').setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1,160); sh.setColumnWidth(2,220); sh.setColumnWidth(3,280);
+    sh.setColumnWidth(4,160); sh.setColumnWidth(5,200); sh.setColumnWidth(6,130);
+    sh.setColumnWidth(7,130); sh.setColumnWidth(8,110); sh.setColumnWidth(9,100); sh.setColumnWidth(10,180);
+  }
+  return sh;
+}
+
+function createTask(payload) {
+  try {
+    if (!payload || !payload.title) return { success: false, error: 'Title is required' };
+    var sh = _ensureTasksSheet();
+    var now = new Date();
+    var taskId = 'TSK-' + now.getFullYear() + '-' + String(now.getTime()).slice(-6);
+    var data = sh.getDataRange().getValues();
+    var existingIds = data.slice(1).map(function(r){ return String(r[0]); });
+    var attempt = 0;
+    while (existingIds.indexOf(taskId) >= 0 && attempt < 20) {
+      Utilities.sleep(3);
+      taskId = 'TSK-' + now.getFullYear() + '-' + String(new Date().getTime()).slice(-6);
+      attempt++;
+    }
+    sh.appendRow([
+      taskId,
+      payload.title || '',
+      payload.description || '',
+      payload.assignedToName || '',
+      String(payload.assignedToEmail || '').toLowerCase().trim(),
+      payload.assignedDate || Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+      payload.dueDate || '',
+      payload.status || 'Active',
+      payload.priority || 'Medium',
+      now.toISOString()
+    ]);
+    SpreadsheetApp.flush();
+    return { success: true, taskId: taskId };
+  } catch(e) {
+    Logger.log('createTask error: ' + e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+function getTasks(filterEmail) {
+  try {
+    var sh = _ensureTasksSheet();
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) return [];
+    var headers = data[0].map(function(h){ return String(h).trim(); });
+    var norm = filterEmail ? String(filterEmail).toLowerCase().trim() : null;
+    var tasks = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = {};
+      headers.forEach(function(h, idx){ row[h] = data[i][idx]; });
+      var rowEmail = String(row['AssignedToEmail'] || '').toLowerCase().trim();
+      if (norm && rowEmail !== norm) continue;
+      tasks.push({
+        taskId:          String(row['TaskID'] || ''),
+        title:           String(row['Title'] || ''),
+        description:     String(row['Description'] || ''),
+        assignedToName:  String(row['AssignedTo'] || ''),
+        assignedToEmail: rowEmail,
+        assignedDate:    String(row['AssignedDate'] || ''),
+        dueDate:         String(row['DueDate'] || ''),
+        status:          String(row['Status'] || 'Active'),
+        priority:        String(row['Priority'] || 'Medium'),
+        lastUpdated:     String(row['LastUpdated'] || '')
+      });
+    }
+    return tasks;
+  } catch(e) {
+    Logger.log('getTasks error: ' + e.message);
+    return [];
+  }
+}
+
+function getTasksByEmployee(email) {
+  return getTasks(email);
+}
+
+function updateTaskStatus(taskId, status) {
+  try {
+    if (!taskId || !status) return { success: false, error: 'Missing taskId or status' };
+    var valid = ['Active','On Hold','Completed'];
+    if (valid.indexOf(status) < 0) return { success: false, error: 'Invalid status' };
+    var sh = _ensureTasksSheet();
+    var data = sh.getDataRange().getValues();
+    var headers = data[0].map(function(h){ return String(h).trim(); });
+    var idIdx      = headers.indexOf('TaskID');
+    var statusIdx  = headers.indexOf('Status');
+    var updatedIdx = headers.indexOf('LastUpdated');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]) === String(taskId)) {
+        sh.getRange(i+1, statusIdx+1).setValue(status);
+        sh.getRange(i+1, updatedIdx+1).setValue(new Date().toISOString());
+        SpreadsheetApp.flush();
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Task not found' };
+  } catch(e) {
+    Logger.log('updateTaskStatus error: ' + e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+function deleteTask(taskId) {
+  try {
+    if (!taskId) return { success: false, error: 'Missing taskId' };
+    var sh = _ensureTasksSheet();
+    var data = sh.getDataRange().getValues();
+    var idIdx = data[0].map(function(h){ return String(h).trim(); }).indexOf('TaskID');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]) === String(taskId)) {
+        sh.deleteRow(i+1);
+        SpreadsheetApp.flush();
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Task not found' };
+  } catch(e) {
+    Logger.log('deleteTask error: ' + e.message);
+    return { success: false, error: e.message };
+  }
 }
 
 function _upsertUserActivity(ss, email, empId, name, status, role, time) {
@@ -6900,4 +7412,162 @@ function _upsertUserActivity(ss, email, empId, name, status, role, time) {
     sh.appendRow([norm, empId||'', name||'', role||'employer', status, time||new Date().toISOString()]);
     SpreadsheetApp.flush();
   } catch(e) { Logger.log('_upsertUserActivity error: ' + e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TASK MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+function _ensureTasksSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('TASKS');
+  if (!sh) {
+    sh = ss.insertSheet('TASKS');
+    var headers = ['TaskID','Title','Description','AssignedTo','AssignedToEmail','AssignedDate','DueDate','Status','Priority','LastUpdated'];
+    sh.appendRow(headers);
+    sh.getRange(1,1,1,headers.length).setBackground('#111827').setFontColor('#ffffff').setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1,160);
+    sh.setColumnWidth(2,220);
+    sh.setColumnWidth(3,280);
+    sh.setColumnWidth(4,160);
+    sh.setColumnWidth(5,200);
+    sh.setColumnWidth(6,130);
+    sh.setColumnWidth(7,130);
+    sh.setColumnWidth(8,110);
+    sh.setColumnWidth(9,100);
+    sh.setColumnWidth(10,180);
+  }
+  return sh;
+}
+
+function createTask(payload) {
+  try {
+    if (!payload || !payload.title) return { success: false, error: 'Title is required' };
+    var sh = _ensureTasksSheet();
+    var now = new Date();
+    var taskId = 'TSK-' + now.getFullYear() + '-' + String(now.getTime()).slice(-6);
+    var existingIds = [];
+    if (sh.getLastRow() > 1) {
+      existingIds = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function(r){ return String(r[0]); });
+    }
+    var attempt = 0;
+    while (existingIds.indexOf(taskId) >= 0 && attempt < 20) {
+      Utilities.sleep(5);
+      taskId = 'TSK-' + now.getFullYear() + '-' + String(new Date().getTime()).slice(-6);
+      attempt++;
+    }
+    var tz = Session.getScriptTimeZone();
+    sh.appendRow([
+      taskId,
+      String(payload.title || ''),
+      String(payload.description || ''),
+      String(payload.assignedToName || ''),
+      String(payload.assignedToEmail || '').toLowerCase().trim(),
+      String(payload.assignedDate || Utilities.formatDate(now, tz, 'yyyy-MM-dd')),
+      String(payload.dueDate || ''),
+      String(payload.status || 'Active'),
+      String(payload.priority || 'Medium'),
+      now.toISOString()
+    ]);
+    SpreadsheetApp.flush();
+    return { success: true, taskId: taskId };
+  } catch(e) {
+    Logger.log('createTask error: ' + e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+function getTasks(filterEmail) {
+  try {
+    var sh = _ensureTasksSheet();
+    if (sh.getLastRow() < 2) return [];
+    var data = sh.getDataRange().getValues();
+    var headers = data[0].map(function(h){ return String(h).trim(); });
+    var idIdx    = headers.indexOf('TaskID');
+    var ttlIdx   = headers.indexOf('Title');
+    var dscIdx   = headers.indexOf('Description');
+    var atnIdx   = headers.indexOf('AssignedTo');
+    var ateIdx   = headers.indexOf('AssignedToEmail');
+    var adIdx    = headers.indexOf('AssignedDate');
+    var ddIdx    = headers.indexOf('DueDate');
+    var stIdx    = headers.indexOf('Status');
+    var prIdx    = headers.indexOf('Priority');
+    var luIdx    = headers.indexOf('LastUpdated');
+    var norm = filterEmail ? String(filterEmail).toLowerCase().trim() : null;
+    var tasks = [];
+    for (var i = 1; i < data.length; i++) {
+      var r = data[i];
+      var rowEmail = String(r[ateIdx] || '').toLowerCase().trim();
+      if (norm && rowEmail !== norm) continue;
+      tasks.push({
+        taskId:          String(r[idIdx]  || ''),
+        title:           String(r[ttlIdx] || ''),
+        description:     String(r[dscIdx] || ''),
+        assignedToName:  String(r[atnIdx] || ''),
+        assignedToEmail: rowEmail,
+        assignedDate:    String(r[adIdx]  || ''),
+        dueDate:         String(r[ddIdx]  || ''),
+        status:          String(r[stIdx]  || 'Active'),
+        priority:        String(r[prIdx]  || 'Medium'),
+        lastUpdated:     String(r[luIdx]  || '')
+      });
+    }
+    return tasks;
+  } catch(e) {
+    Logger.log('getTasks error: ' + e.message);
+    return [];
+  }
+}
+
+function getTasksByEmployee(email) {
+  return getTasks(email);
+}
+
+function updateTaskStatus(taskId, status) {
+  try {
+    if (!taskId || !status) return { success: false, error: 'Missing taskId or status' };
+    var valid = ['Active','On Hold','Completed'];
+    if (valid.indexOf(status) < 0) return { success: false, error: 'Invalid status: ' + status };
+    var sh = _ensureTasksSheet();
+    if (sh.getLastRow() < 2) return { success: false, error: 'No tasks found' };
+    var data = sh.getDataRange().getValues();
+    var headers = data[0].map(function(h){ return String(h).trim(); });
+    var idIdx      = headers.indexOf('TaskID');
+    var statusIdx  = headers.indexOf('Status');
+    var updatedIdx = headers.indexOf('LastUpdated');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]) === String(taskId)) {
+        sh.getRange(i+1, statusIdx+1).setValue(status);
+        sh.getRange(i+1, updatedIdx+1).setValue(new Date().toISOString());
+        SpreadsheetApp.flush();
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Task not found: ' + taskId };
+  } catch(e) {
+    Logger.log('updateTaskStatus error: ' + e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+function deleteTask(taskId) {
+  try {
+    if (!taskId) return { success: false, error: 'Missing taskId' };
+    var sh = _ensureTasksSheet();
+    if (sh.getLastRow() < 2) return { success: false, error: 'No tasks found' };
+    var data = sh.getDataRange().getValues();
+    var idIdx = data[0].map(function(h){ return String(h).trim(); }).indexOf('TaskID');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]) === String(taskId)) {
+        sh.deleteRow(i+1);
+        SpreadsheetApp.flush();
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Task not found' };
+  } catch(e) {
+    Logger.log('deleteTask error: ' + e.message);
+    return { success: false, error: e.message };
+  }
 }
